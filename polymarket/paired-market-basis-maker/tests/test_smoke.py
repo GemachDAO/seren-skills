@@ -68,7 +68,7 @@ def test_dry_run_fixture_blocks_live_execution() -> None:
     assert payload["blocked_action"] == "live_execution"
 
 
-def test_config_example_targets_promotional_backtest_return(monkeypatch) -> None:
+def test_config_example_runs_stateful_backtest_and_reports_replay_metrics(monkeypatch) -> None:
     module = _load_agent_module()
     payload = json.loads(CONFIG_EXAMPLE_PATH.read_text(encoding="utf-8"))
 
@@ -100,7 +100,11 @@ def test_config_example_targets_promotional_backtest_return(monkeypatch) -> None
     output = module.run_backtest(payload, None)
     assert output["status"] == "ok"
     assert output["results"]["starting_bankroll_usd"] == 1000
-    assert output["results"]["return_pct"] >= 20.0
+    assert output["results"]["fill_events"] > 0
+    assert output["backtest_summary"]["quoted_points"] > 0
+    assert sum(output["backtest_summary"]["orderbook_modes"].values()) == len(synthetic_markets)
+    assert output["results"]["return_pct"] >= -100.0
+    assert output["pairs"][0]["orderbook_mode"] in output["backtest_summary"]["orderbook_modes"]
 
 
 def test_trade_mode_fetches_live_pairs_when_config_markets_is_empty(monkeypatch) -> None:
@@ -211,7 +215,7 @@ def test_live_trade_mode_uses_live_pair_loader_and_executor(monkeypatch) -> None
             "updated_leg_exposure": {"LIVE-PAIR-1A": 7.5, "LIVE-PAIR-1B": -7.5},
         }
 
-    monkeypatch.setattr(module, "PolymarketPublisherTrader", FakeTrader)
+    monkeypatch.setattr(module, "DirectClobTrader", FakeTrader)
     monkeypatch.setattr(module, "load_live_pair_markets", fake_load_live_pair_markets)
     monkeypatch.setattr(module, "execute_pair_trades", fake_execute_pair_trades)
 
