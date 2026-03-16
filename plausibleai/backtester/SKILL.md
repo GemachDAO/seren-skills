@@ -1,6 +1,6 @@
 ---
 name: backtester
-description: "Use to perform market backtests with PlausibleAI Backtester, including symbol discovery, strategy validation, and batch execution."
+description: "Use to perform market backtests with PlausibleAI Backtester, including symbol discovery, strategy validation, strategy mining, and batch execution."
 ---
 
 # PlausibleAI Backtester
@@ -25,7 +25,7 @@ All endpoints require `Authorization: Bearer $SEREN_API_KEY`.
 Set `SEREN_API_KEY` for bearer auth. Use `SEREN_PUBLISHER_BASE_URL` in examples; default it to `https://api.serendb.com/publishers/plausibleai`.
 
 2. Discover the market universe before guessing symbols.
-Call `GET /api/markets/types` to see supported market types and provider-aware symbol counts.
+Call `GET /api/markets/types` to see supported market types and symbol counts.
 Call `GET /api/markets/symbols` with `market_type`, `search`, `limit`, and `offset` when the symbol is unknown.
 Call `GET /api/markets/symbols/{symbol}` when the caller needs metadata or data availability.
 
@@ -45,8 +45,21 @@ Surface validation errors directly instead of trying to guess what the API inten
 6. Execute.
 Use `POST /api/backtests` for a single run.
 Use `POST /api/backtests/batch` when the caller wants multiple independent runs. Batch requests run concurrently on the server; order in the response is stable regardless of completion order.
+Single-run backtests are also stored as short-lived retrievable results. The response body is a compact stored-result summary with `id`, `expires_at`, and follow-up links for fetching the full result, trades, and equity curve.
 
-7. Interpret the result carefully.
+7. Mine when the caller wants "the best actionable signal now".
+Use `POST /api/backtests/mine`.
+Minimal request is just `{ "symbol": "BTC-USD" }`.
+Mining defaults to a sensible rolling window and ranks candidates by `profit_factor` unless overridden.
+Mining returns a compact summary plus a nested `backtest` handle with `id`, `expires_at`, and follow-up links.
+
+8. Retrieve large result sections incrementally.
+Use `GET /api/backtests/{id}` for the stored full result.
+Use `GET /api/backtests/{id}/trades` for the full trade list, or add `?limit=&offset=` when pagination is needed.
+Use `GET /api/backtests/{id}/equity-curve` for the full equity curve, or add `?limit=&offset=` when pagination is needed.
+Stored results are ephemeral and expire automatically.
+
+9. Interpret the result carefully.
 `report` is the summary.
 `benchmarks.buy_and_hold` is the buy-and-hold comparison over the same range.
 `execution.provider_symbol` shows the provider-native symbol actually used after the backend auto-resolves the best data source.
@@ -98,7 +111,7 @@ Top-level `first_entry_signal_at` and `last_entry_signal_at` refer to entry sign
 |-------|------|----------|-------|
 | `side` | `"long"` \| `"short"` | yes | trade direction |
 | `entry_mode` | enum | yes | `this_bar_close`, `next_bar_open` (most common), `next_bar_limit`, `next_bar_stop` |
-| `atr_period` | integer | only when an exit uses `atr` mode | ATR period used for ATR-based exits |
+| `atr_period` | integer | no | used when any ATR-based entry offset or exit is present; defaults to `20` when omitted |
 | `entry_price` | `{basis, lookback, offset}` | no | only valid with `next_bar_limit` or `next_bar_stop`; bases: `none`, `highest_high`, `lowest_low`; `offset` is `{mode, value}` and moves the reference price up or down |
 
 ## Exit Policy Quick Reference
@@ -114,9 +127,9 @@ Price-based exits go in `exits`. A rule-based signal exit goes in `exit_signal`.
 | `exits.profitable_closes` | integer | — | exits after N cumulative profitable closes since entry |
 | `exits.highest_high_exit_lookback` | integer | — | exits at the rolling highest high over N bars |
 | `exits.lowest_low_exit_lookback` | integer | — | exits at the rolling lowest low over N bars |
-| `exit_signal` | rule set | — | fires like an entry rule; overrides price exits |
+| `exit_signal` | rule set | — | rule-based exit logic that can be combined with price exits |
 
-`atr` mode requires either `execution.atr_period` or that it be inferrable. `entry_price` is only valid with `entry_mode: next_bar_limit` or `next_bar_stop`.
+If any ATR-based entry offset or exit is present and `execution.atr_period` is omitted, the API defaults it to `20`. `entry_price` is only valid with `entry_mode: next_bar_limit` or `next_bar_stop`.
 
 ## Example Strategies
 
@@ -506,6 +519,81 @@ curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests" \
   }' | jq
 ```
 
+The response from `POST /api/backtests` is a compact stored-result summary. Use the returned `id` or `links.full_result_path` to fetch the full backtest result when needed.
+
+### Retrieve a Stored Backtest Result
+
+Use the `id` returned in the compact response from `POST /api/backtests` or `POST /api/backtests/mine`.
+
+```bash
+curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/<BACKTEST_ID>" \
+  -H "Authorization: Bearer $SEREN_API_KEY" | jq
+```
+
+Retrieve all trades:
+
+```bash
+curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/<BACKTEST_ID>/trades" \
+  -H "Authorization: Bearer $SEREN_API_KEY" | jq
+```
+
+Retrieve paginated trades when needed:
+
+```bash
+curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/<BACKTEST_ID>/trades?limit=100&offset=0" \
+  -H "Authorization: Bearer $SEREN_API_KEY" | jq
+```
+
+Retrieve the full equity curve:
+
+```bash
+curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/<BACKTEST_ID>/equity-curve" \
+  -H "Authorization: Bearer $SEREN_API_KEY" | jq
+```
+
+Retrieve paginated equity curve when needed:
+
+```bash
+curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/<BACKTEST_ID>/equity-curve?limit=100&offset=0" \
+  -H "Authorization: Bearer $SEREN_API_KEY" | jq
+```
+
+### Mine an Actionable Strategy
+
+Minimal mining request:
+
+```bash
+curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/mine" \
+  -H "Authorization: Bearer $SEREN_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "symbol": "BTC-USD"
+  }' | jq
+```
+
+Mining returns:
+
+- `symbol`
+- `signal_at`
+- `fitness_metric`
+- `fitness_value`
+- `mined_candidates`
+- `actionable_candidates`
+- `rank`
+- `backtest`
+
+`backtest` contains the stored result handle and compact summary:
+
+- `id`
+- `kind`
+- `created_at`
+- `expires_at`
+- `request`
+- `summary`
+- `links.full_result_path`
+- `links.trades_path`
+- `links.equity_curve_path`
+
 ### Batch Execution
 
 ```bash
@@ -620,6 +708,9 @@ curl -sS "$SEREN_PUBLISHER_BASE_URL/api/backtests/batch" \
 ## Response Discipline
 
 - Prefer returning concise summaries unless the user asks for raw JSON.
+- `POST /api/backtests` and `POST /api/backtests/mine` both return compact stored-result summaries first; do not assume the full backtest payload is in the initial response.
+- For stored results, summarize the compact summary first and only fetch the full result, `trades`, or `equity_curve` when the user needs that detail.
+- Use `?limit=&offset=` for `trades` or `equity_curve` only when the result is large enough that incremental retrieval is useful.
 - When showing example payloads, include rule ids explicitly.
 - When the symbol is uncertain, use the market endpoints first instead of inventing tickers.
 - When a backtest output looks surprising, compare `trades`, `equity_curve`, and `diagnostics` before assuming the engine is wrong.
