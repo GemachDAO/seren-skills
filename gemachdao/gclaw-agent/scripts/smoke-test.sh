@@ -38,7 +38,7 @@ pass "gclaw binary found: $(command -v gclaw)"
 section "2. Agent Message Test"
 
 echo "  Sending test message to agent..."
-AGENT_OUTPUT=$(gclaw agent -m "hello" 2>&1) || true
+AGENT_OUTPUT=$(gclaw agent -m "hello" 2>&1)
 AGENT_EXIT=$?
 
 if [[ $AGENT_EXIT -eq 0 ]] && [[ -n "$AGENT_OUTPUT" ]]; then
@@ -53,7 +53,7 @@ fi
 # ─── Status check ────────────────────────────────────────────────────────────
 section "3. Status Check"
 
-STATUS_OUTPUT=$(gclaw status 2>&1) || true
+STATUS_OUTPUT=$(gclaw status 2>&1)
 STATUS_EXIT=$?
 
 if [[ $STATUS_EXIT -eq 0 ]]; then
@@ -75,7 +75,7 @@ fi
 # ─── Skills list ─────────────────────────────────────────────────────────────
 section "4. Skills List"
 
-SKILLS_OUTPUT=$(gclaw skills list 2>&1) || true
+SKILLS_OUTPUT=$(gclaw skills list 2>&1)
 SKILLS_EXIT=$?
 
 if [[ $SKILLS_EXIT -eq 0 ]]; then
@@ -97,7 +97,7 @@ fi
 section "5. Gateway Health Endpoint"
 
 if command -v curl &>/dev/null; then
-  HEALTH_RESPONSE=$(curl -sf --connect-timeout 3 "${GATEWAY_URL}/health" 2>&1) || true
+  HEALTH_RESPONSE=$(curl -sf --connect-timeout 3 "${GATEWAY_URL}/health" 2>&1)
   CURL_EXIT=$?
 
   if [[ $CURL_EXIT -eq 0 ]] && [[ -n "$HEALTH_RESPONSE" ]]; then
@@ -126,7 +126,7 @@ fi
 # ─── Cron list ────────────────────────────────────────────────────────────────
 section "6. Cron Job List"
 
-CRON_OUTPUT=$(gclaw cron list 2>&1) || true
+CRON_OUTPUT=$(gclaw cron list 2>&1)
 CRON_EXIT=$?
 
 if [[ $CRON_EXIT -eq 0 ]]; then

@@ -93,13 +93,45 @@ DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+CHECKSUMS_FILE="checksums.txt"
+CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/${CHECKSUMS_FILE}"
+
 info "Downloading ${DOWNLOAD_URL}..."
 if command -v curl &>/dev/null; then
   curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/${TARBALL}" \
     || die "Download failed. Check that release ${VERSION} exists at https://github.com/${REPO}/releases"
+  curl -fsSL "$CHECKSUMS_URL" -o "${TMP_DIR}/${CHECKSUMS_FILE}" 2>/dev/null || true
 else
   wget -q "$DOWNLOAD_URL" -O "${TMP_DIR}/${TARBALL}" \
     || die "Download failed. Check that release ${VERSION} exists at https://github.com/${REPO}/releases"
+  wget -q "$CHECKSUMS_URL" -O "${TMP_DIR}/${CHECKSUMS_FILE}" 2>/dev/null || true
+fi
+
+# ─── Verify checksum ──────────────────────────────────────────────────────────
+if [[ -s "${TMP_DIR}/${CHECKSUMS_FILE}" ]]; then
+  info "Verifying SHA256 checksum..."
+  EXPECTED_SUM=$(grep "${TARBALL}" "${TMP_DIR}/${CHECKSUMS_FILE}" | awk '{print $1}')
+  if [[ -z "$EXPECTED_SUM" ]]; then
+    warn "Checksum entry for ${TARBALL} not found in ${CHECKSUMS_FILE} — skipping verification"
+  else
+    if command -v sha256sum &>/dev/null; then
+      ACTUAL_SUM=$(sha256sum "${TMP_DIR}/${TARBALL}" | awk '{print $1}')
+    elif command -v shasum &>/dev/null; then
+      ACTUAL_SUM=$(shasum -a 256 "${TMP_DIR}/${TARBALL}" | awk '{print $1}')
+    else
+      warn "sha256sum/shasum not available — skipping checksum verification"
+      ACTUAL_SUM="$EXPECTED_SUM"
+    fi
+    if [[ "$ACTUAL_SUM" != "$EXPECTED_SUM" ]]; then
+      die "SHA256 checksum mismatch for ${TARBALL}!
+  Expected: ${EXPECTED_SUM}
+  Got:      ${ACTUAL_SUM}
+Remove ${TMP_DIR} and retry, or verify the release at https://github.com/${REPO}/releases"
+    fi
+    success "SHA256 checksum verified"
+  fi
+else
+  warn "No checksums file found for release ${VERSION} — skipping integrity verification"
 fi
 
 # ─── Extract ──────────────────────────────────────────────────────────────────
