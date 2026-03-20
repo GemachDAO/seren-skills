@@ -36,9 +36,9 @@ if command -v gclaw &>/dev/null; then
   fi
 
   if gclaw --help &>/dev/null 2>&1 || gclaw 2>&1 | grep -q -i "usage\|help\|gclaw\|command"; then
-    pass "gclaw --help exits cleanly"
+    pass "gclaw help/usage text is available"
   else
-    warn "gclaw --help did not return expected output"
+    warn "gclaw did not produce expected help/usage output"
   fi
 else
   fail "gclaw binary not found in PATH"
