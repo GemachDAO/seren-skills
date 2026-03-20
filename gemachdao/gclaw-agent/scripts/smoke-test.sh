@@ -84,7 +84,7 @@ else
   skip "gclaw skills list" "command failed (exit ${SKILLS_EXIT}) — may need onboarding"
 fi
 
-BUILTIN_OUTPUT=$(gclaw skills list-builtin 2>&1) || true
+BUILTIN_OUTPUT=$(gclaw skills list-builtin 2>&1)
 BUILTIN_EXIT=$?
 
 if [[ $BUILTIN_EXIT -eq 0 ]]; then
